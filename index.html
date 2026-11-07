@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TEYES Motion Diagnostics v3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f1115;
+            color: #ffffff;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .mono-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .bar-transition {
+            transition: width 0.05s linear, background-color 0.2s ease;
+        }
+
+        .glow-blue { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); }
+        .glow-red { box-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
+        
+        ::-webkit-scrollbar { display: none; }
+        
+        .btn-active {
+            background-color: #2563eb !important; /* blue-600 */
+            color: white !important;
+            border-color: #3b82f6 !important;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col items-center justify-center relative select-none">
+
+    <!-- Экран сообщений -->
+    <div id="message-box" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-600/95 text-white px-8 py-4 rounded-2xl text-xl font-semibold hidden z-50 shadow-2xl backdrop-blur-md transition-opacity max-w-4xl text-center">
+        <span id="message-text">Ошибка</span>
+        <button id="close-msg" class="mt-4 bg-white/20 hover:bg-white/30 text-white py-2 px-6 rounded-lg text-lg block mx-auto">Закрыть</button>
+    </div>
+
+    <!-- Стартовый экран -->
+    <div id="start-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 backdrop-blur-md z-40">
+        <div class="text-center max-w-4xl px-6">
+            <h1 class="text-5xl font-bold mb-4 text-gray-100 tracking-wide">Датчики движения (Гироскоп)</h1>
+            <p class="text-gray-400 text-xl mb-10 leading-relaxed">
+                Магнитометр отключен для избежания наводок от кузова. Поворот авто вычисляется на основе <b>Gyroscope Rotation Rate</b>. Угол имеет эффект "автовозврата" в центр, имитируя положение руля.
+            </p>
+            
+            <button id="start-btn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-6 px-16 rounded-full text-3xl shadow-[0_0_40px_rgba(37,99,235,0.6)] active:scale-95 transition-all duration-200">
+                Запустить датчики
+            </button>
+
+            <div id="https-warning" class="mt-10 text-yellow-500 text-lg hidden bg-yellow-900/30 p-4 rounded-xl border border-yellow-700/50">
+                ⚠️ Внимание: Локальный файл. Chrome на Android требует HTTPS для доступа к датчикам. Разместите файл на хостинге.
+            </div>
+        </div>
+    </div>
+
+    <!-- Дашборд -->
+    <div id="dashboard" class="w-full h-full flex flex-col p-6 hidden">
+        
+        <!-- Верхняя панель -->
+        <div class="flex justify-between items-start mb-4">
+            <div class="flex items-center space-x-4 mt-2">
+                <div class="w-5 h-5 bg-green-500 rounded-full animate-pulse shadow-[0_0_20px_#22c55e]"></div>
+                <h2 class="text-3xl font-bold text-gray-300 uppercase tracking-widest">Телеметрия</h2>
+            </div>
+            
+            <!-- Настройки осей (для калибровки под разные китайские ГУ) -->
+            <div class="flex flex-col space-y-2 bg-gray-800/80 p-3 rounded-2xl border border-gray-700 shadow-lg text-sm">
+                <div class="flex items-center justify-between space-x-4">
+                    <span class="text-gray-400 font-semibold w-24">Поворот:</span>
+                    <div class="flex space-x-1" id="gyro-btns">
+                        <button class="gyro-btn px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 transition-colors" data-axis="alpha">A</button>
+                        <button class="gyro-btn btn-active px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 transition-colors" data-axis="beta">B</button>
+                        <button class="gyro-btn px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 transition-colors" data-axis="gamma">G</button>
+                    </div>
+                    <button id="inv-gyro" class="px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 active:bg-gray-600">Инверс.</button>
+                </div>
+                <div class="flex items-center justify-between space-x-4">
+                    <span class="text-gray-400 font-semibold w-24">G-Force:</span>
+                    <div class="flex space-x-1" id="accel-btns">
+                        <button class="accel-btn btn-active px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 transition-colors" data-axis="x">X</button>
+                        <button class="accel-btn px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 transition-colors" data-axis="y">Y</button>
+                        <button class="accel-btn px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 transition-colors" data-axis="z">Z</button>
+                    </div>
+                    <button id="inv-accel" class="px-4 py-1.5 rounded-lg bg-gray-700 text-gray-300 border border-gray-600 active:bg-gray-600">Инверс.</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Центральная часть -->
+        <div class="flex-1 flex flex-row items-center justify-between w-full mt-2">
+            
+            <!-- Левая панель: Значения -->
+            <div class="w-1/3 flex flex-col space-y-12 bg-gray-800/60 p-8 rounded-3xl border border-gray-700/50 shadow-2xl">
+                <div>
+                    <div class="text-gray-400 text-xl font-semibold uppercase tracking-wider mb-2">Отклонение (Yaw)</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="val-alpha" class="text-7xl font-bold mono-num text-white">0.0</span>
+                        <span class="text-3xl text-gray-500">°</span>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-gray-400 text-xl font-semibold uppercase tracking-wider mb-2">Боковое ускорение</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="val-accel" class="text-7xl font-bold mono-num text-white">0.0</span>
+                        <span class="text-3xl text-gray-500">m/s²</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Центральная панель: Автомобиль -->
+            <div class="w-1/3 flex justify-center items-center relative">
+                <div id="car-container" class="w-40 h-80 relative" style="will-change: transform;">
+                    <svg viewBox="0 0 100 200" class="w-full h-full drop-shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
+                        <!-- Колеса -->
+                        <rect x="12" y="35" width="12" height="30" rx="4" fill="#030712" />
+                        <rect x="76" y="35" width="12" height="30" rx="4" fill="#030712" />
+                        <rect x="12" y="135" width="12" height="30" rx="4" fill="#030712" />
+                        <rect x="76" y="135" width="12" height="30" rx="4" fill="#030712" />
+                        
+                        <!-- Кузов -->
+                        <rect x="20" y="20" width="60" height="160" rx="20" fill="#374151" stroke="#1f2937" stroke-width="3"/>
+                        
+                        <!-- Лобовое стекло -->
+                        <path d="M 26 70 Q 50 55 74 70 L 70 95 L 30 95 Z" fill="#111827" stroke="#4b5563" stroke-width="1"/>
+                        
+                        <!-- Заднее стекло -->
+                        <path d="M 28 145 Q 50 155 72 145 L 66 125 L 34 125 Z" fill="#111827" stroke="#4b5563" stroke-width="1"/>
+                        
+                        <!-- Крыша -->
+                        <rect x="32" y="98" width="36" height="24" rx="4" fill="#4b5563" />
+                        
+                        <!-- Фары -->
+                        <rect x="25" y="22" width="12" height="6" rx="2" fill="#fef08a" style="filter: drop-shadow(0 -5px 10px rgba(253,224,71,0.6));"/>
+                        <rect x="63" y="22" width="12" height="6" rx="2" fill="#fef08a" style="filter: drop-shadow(0 -5px 10px rgba(253,224,71,0.6));"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Правая панель: Графики -->
+            <div class="w-1/3 flex flex-col justify-center px-10">
+                <div class="text-center text-gray-400 text-xl font-semibold uppercase tracking-wider mb-6">G-Force</div>
+                
+                <div class="relative w-full h-16 bg-gray-800 rounded-full border-4 border-gray-700 overflow-hidden flex items-center shadow-inner">
+                    <div class="absolute left-1/2 top-0 bottom-0 w-1 bg-gray-500 z-10 transform -translate-x-1/2"></div>
+                    
+                    <!-- Бар влево (Красный) -->
+                    <div class="w-1/2 h-full flex justify-end">
+                        <div id="bar-left" class="h-full bg-red-500 bar-transition w-0 rounded-l-full glow-red"></div>
+                    </div>
+                    
+                    <!-- Бар вправо (Синий) -->
+                    <div class="w-1/2 h-full flex justify-start">
+                        <div id="bar-right" class="h-full bg-blue-500 bar-transition w-0 rounded-r-full glow-blue"></div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-4 text-gray-500 text-2xl font-bold px-4">
+                    <span>L</span>
+                    <span>R</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const startScreen = document.getElementById('start-screen');
+        const dashboard = document.getElementById('dashboard');
+        const startBtn = document.getElementById('start-btn');
+        const msgBox = document.getElementById('message-box');
+        const msgText = document.getElementById('message-text');
+        const httpsWarning = document.getElementById('https-warning');
+        
+        const valAlpha = document.getElementById('val-alpha');
+        const valAccel = document.getElementById('val-accel');
+        const carContainer = document.getElementById('car-container');
+        const barLeft = document.getElementById('bar-left');
+        const barRight = document.getElementById('bar-right');
+
+        // Конфигурация
+        let selectedGyro = 'beta'; // Обычно beta или gamma на горизонтальных ГУ
+        let selectedAccel = 'x';
+        let isGyroInverted = 1;
+        let isAccelInverted = 1;
+
+        // Данные реального времени
+        let isRunning = false;
+        let currentGyroRate = 0; // Скорость вращения (градусы в секунду)
+        let rawAccelVal = 0;
+        
+        // Интегрированный угол и сглаживание
+        let carAngle = 0;
+        let smoothAccel = 0;
+        let lastTime = 0;
+        
+        const LPF_ACCEL = 0.15;
+        const GYRO_DECAY = 0.96; // Множитель возврата руля (0.96 = возврат 4% за кадр)
+        const MAX_ACCEL = 10; 
+
+        // Проверка HTTPS
+        if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.protocol !== 'file:') {
+            // file: включен в проверку, но на Android Chrome file:// тоже блокирует датчики
+            httpsWarning.classList.remove('hidden');
+        }
+
+        function showMessage(text) {
+            msgText.innerHTML = text;
+            msgBox.classList.remove('hidden');
+        }
+
+        document.getElementById('close-msg').addEventListener('click', () => msgBox.classList.add('hidden'));
+
+        // Обработчики кнопок настроек
+        document.querySelectorAll('.gyro-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.gyro-btn').forEach(b => b.classList.remove('btn-active'));
+                e.target.classList.add('btn-active');
+                selectedGyro = e.target.dataset.axis;
+            });
+        });
+        document.querySelectorAll('.accel-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.accel-btn').forEach(b => b.classList.remove('btn-active'));
+                e.target.classList.add('btn-active');
+                selectedAccel = e.target.dataset.axis;
+            });
+        });
+        document.getElementById('inv-gyro').addEventListener('click', (e) => {
+            isGyroInverted *= -1;
+            e.target.classList.toggle('btn-active');
+        });
+        document.getElementById('inv-accel').addEventListener('click', (e) => {
+            isAccelInverted *= -1;
+            e.target.classList.toggle('btn-active');
+        });
+
+        startBtn.addEventListener('click', async () => {
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceMotionEvent.requestPermission();
+                    if (permission === 'granted') initSensors();
+                    else showMessage('Доступ к датчикам отклонен.');
+                } catch (err) {
+                    showMessage('Ошибка прав: ' + err.message);
+                }
+            } else {
+                initSensors();
+            }
+        });
+
+        function initSensors() {
+            if (!window.DeviceMotionEvent) {
+                showMessage('Браузер не видит devicemotion. Откройте по HTTPS.');
+                return;
+            }
+
+            // Слушаем ТОЛЬКО devicemotion (акселерометр + гироскоп)
+            window.addEventListener('devicemotion', handleMotion);
+
+            startScreen.classList.add('hidden');
+            dashboard.classList.remove('hidden');
+            
+            if (!isRunning) {
+                isRunning = true;
+                lastTime = performance.now();
+                requestAnimationFrame(updateUI);
+            }
+        }
+
+        function handleMotion(event) {
+            // Извлекаем скорость вращения
+            const r = event.rotationRate;
+            if (r) {
+                let rate = 0;
+                if (selectedGyro === 'alpha') rate = r.alpha || 0;
+                if (selectedGyro === 'beta') rate = r.beta || 0;
+                if (selectedGyro === 'gamma') rate = r.gamma || 0;
+                currentGyroRate = rate * isGyroInverted;
+            }
+
+            // Извлекаем ускорение
+            const a = event.accelerationIncludingGravity || event.acceleration;
+            if (a) {
+                let acc = 0;
+                if (selectedAccel === 'x') acc = a.x || 0;
+                if (selectedAccel === 'y') acc = a.y || 0;
+                if (selectedAccel === 'z') acc = a.z || 0;
+                rawAccelVal = acc * isAccelInverted;
+            }
+        }
+
+        function updateUI(currentTime) {
+            if (!isRunning) return;
+
+            // Вычисляем дельту времени (dt) в секундах
+            let dt = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            if (dt > 0.1) dt = 0.016; // Защита от скачков после сворачивания браузера
+
+            // 1. Интегрируем скорость вращения (Скорость * Время = Угол)
+            carAngle += (currentGyroRate * dt);
+            
+            // 2. Применяем эффект "возврата руля" (Затухание угла)
+            carAngle *= GYRO_DECAY;
+
+            // 3. Сглаживание G-Force (Low-Pass Filter)
+            smoothAccel = smoothAccel + (rawAccelVal - smoothAccel) * LPF_ACCEL;
+
+            // Обновляем текст
+            valAlpha.textContent = carAngle.toFixed(1);
+            valAccel.textContent = smoothAccel.toFixed(2);
+
+            // Вращаем автомобиль (ограничиваем угол для визуала)
+            let visualAngle = Math.max(-90, Math.min(90, carAngle));
+            carContainer.style.transform = `rotate(${visualAngle}deg)`;
+
+            // Заполняем бары G-Force
+            let accelPercent = (Math.abs(smoothAccel) / MAX_ACCEL) * 100;
+            accelPercent = Math.min(100, Math.max(0, accelPercent)); 
+
+            if (smoothAccel < 0) {
+                barLeft.style.width = `${accelPercent}%`;
+                barRight.style.width = '0%';
+            } else if (smoothAccel > 0) {
+                barRight.style.width = `${accelPercent}%`;
+                barLeft.style.width = '0%';
+            } else {
+                barLeft.style.width = '0%';
+                barRight.style.width = '0%';
+            }
+
+            requestAnimationFrame(updateUI);
+        }
+    </script>
+</body>
+</html>
