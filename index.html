@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TEYES Motion Diagnostics v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f1115;
+            color: #ffffff;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .mono-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .smooth-transform {
+            transition: transform 0.05s linear;
+        }
+        
+        .bar-transition {
+            transition: width 0.05s linear, background-color 0.2s ease;
+        }
+
+        .glow-blue {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        .glow-red {
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+        }
+        
+        ::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col items-center justify-center relative select-none">
+
+    <!-- Экран сообщений -->
+    <div id="message-box" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-600/95 text-white px-8 py-4 rounded-2xl text-2xl font-semibold hidden z-50 shadow-2xl backdrop-blur-md transition-opacity max-w-4xl text-center">
+        <span id="message-text">Ошибка</span>
+        <button id="close-msg" class="mt-4 bg-white/20 hover:bg-white/30 text-white py-2 px-6 rounded-lg text-lg block mx-auto">Закрыть</button>
+    </div>
+
+    <!-- Стартовый экран -->
+    <div id="start-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 backdrop-blur-md z-40">
+        <div class="text-center max-w-3xl px-6">
+            <h1 class="text-6xl font-bold mb-6 text-gray-100 tracking-wide">Датчики движения</h1>
+            <p class="text-gray-400 text-2xl mb-12">Расположите устройство в панели. Нажмите кнопку для запуска и установки нулевой точки.</p>
+            
+            <button id="start-btn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-8 px-20 rounded-full text-4xl shadow-[0_0_40px_rgba(37,99,235,0.6)] active:scale-95 transition-all duration-200">
+                Запустить датчики
+            </button>
+
+            <div id="https-warning" class="mt-12 text-yellow-500 text-xl hidden bg-yellow-900/30 p-4 rounded-xl border border-yellow-700/50">
+                ⚠️ Внимание: Вы открыли файл локально. Chrome блокирует датчики без HTTPS-соединения. Разместите файл на хостинге.
+            </div>
+        </div>
+    </div>
+
+    <!-- Дашборд -->
+    <div id="dashboard" class="w-full h-full flex flex-col p-6 hidden">
+        
+        <!-- Верхняя панель -->
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex items-center space-x-4">
+                <div class="w-5 h-5 bg-green-500 rounded-full animate-pulse shadow-[0_0_20px_#22c55e]"></div>
+                <h2 class="text-3xl font-bold text-gray-300 uppercase tracking-widest">TEYES Telemetry</h2>
+            </div>
+            <button id="recalibrate-btn" class="bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 py-4 px-10 rounded-xl text-2xl font-semibold active:scale-95 transition-all">
+                Сбросить ноль
+            </button>
+        </div>
+
+        <!-- Центральная часть -->
+        <div class="flex-1 flex flex-row items-center justify-between w-full mt-2">
+            
+            <!-- Левая панель: Значения -->
+            <div class="w-1/3 flex flex-col space-y-12 bg-gray-800/60 p-10 rounded-3xl border border-gray-700/50 shadow-2xl">
+                <div>
+                    <div class="text-gray-400 text-2xl font-semibold uppercase tracking-wider mb-2">Угол поворота</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="val-alpha" class="text-7xl font-bold mono-num text-white">0.0</span>
+                        <span class="text-4xl text-gray-500">°</span>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-gray-400 text-2xl font-semibold uppercase tracking-wider mb-2">Боковое ускорение</div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="val-accel" class="text-7xl font-bold mono-num text-white">0.0</span>
+                        <span class="text-4xl text-gray-500">m/s²</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Центральная панель: Руль -->
+            <div class="w-1/3 flex justify-center items-center relative">
+                <div id="steering-wheel" class="w-80 h-80 smooth-transform relative">
+                    <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-2xl">
+                        <!-- Внешний обод -->
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="#374151" stroke-width="10"/>
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="#1f2937" stroke-width="6"/>
+                        <!-- Спицы -->
+                        <path d="M 10 50 Q 50 60 90 50" fill="none" stroke="#374151" stroke-width="8" stroke-linecap="round"/>
+                        <path d="M 50 55 L 50 95" fill="none" stroke="#374151" stroke-width="8" stroke-linecap="round"/>
+                        <!-- Центр -->
+                        <circle cx="50" cy="53" r="12" fill="#111827" stroke="#4b5563" stroke-width="2"/>
+                        <!-- Метка центра -->
+                        <rect x="48" y="0" width="4" height="8" fill="#ef4444" rx="2"/>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Правая панель: Графики -->
+            <div class="w-1/3 flex flex-col justify-center px-10">
+                <div class="text-center text-gray-400 text-2xl font-semibold uppercase tracking-wider mb-6">G-Force (X-Axis)</div>
+                
+                <div class="relative w-full h-20 bg-gray-800 rounded-full border-4 border-gray-700 overflow-hidden flex items-center shadow-inner">
+                    <!-- Центральная риска -->
+                    <div class="absolute left-1/2 top-0 bottom-0 w-1.5 bg-gray-400 z-10 transform -translate-x-1/2"></div>
+                    
+                    <!-- Бар влево (Красный) -->
+                    <div class="w-1/2 h-full flex justify-end">
+                        <div id="bar-left" class="h-full bg-red-500 bar-transition w-0 rounded-l-full glow-red"></div>
+                    </div>
+                    
+                    <!-- Бар вправо (Синий) -->
+                    <div class="w-1/2 h-full flex justify-start">
+                        <div id="bar-right" class="h-full bg-blue-500 bar-transition w-0 rounded-r-full glow-blue"></div>
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-6 text-gray-500 text-3xl font-bold px-4">
+                    <span>L</span>
+                    <span>R</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const startScreen = document.getElementById('start-screen');
+        const dashboard = document.getElementById('dashboard');
+        const startBtn = document.getElementById('start-btn');
+        const recalibrateBtn = document.getElementById('recalibrate-btn');
+        const msgBox = document.getElementById('message-box');
+        const msgText = document.getElementById('message-text');
+        const closeMsgBtn = document.getElementById('close-msg');
+        const httpsWarning = document.getElementById('https-warning');
+        
+        const valAlpha = document.getElementById('val-alpha');
+        const valAccel = document.getElementById('val-accel');
+        const steeringWheel = document.getElementById('steering-wheel');
+        const barLeft = document.getElementById('bar-left');
+        const barRight = document.getElementById('bar-right');
+
+        let isRunning = false;
+        let initialAlpha = null;
+        
+        let rawAlpha = 0;
+        let rawAccelX = 0;
+
+        // Коэффициент сглаживания
+        let smoothAlpha = 0;
+        let smoothAccelX = 0;
+        const LPF_FACTOR = 0.15; 
+
+        // Макс значение для G-Force (10 m/s^2 ~ 1G)
+        const MAX_ACCEL = 10; 
+
+        // Проверка HTTPS при загрузке
+        if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+            httpsWarning.classList.remove('hidden');
+        }
+
+        function showMessage(text) {
+            msgText.innerHTML = text;
+            msgBox.classList.remove('hidden');
+        }
+
+        closeMsgBtn.addEventListener('click', () => {
+            msgBox.classList.add('hidden');
+        });
+
+        startBtn.addEventListener('click', async () => {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permissionState = await DeviceOrientationEvent.requestPermission();
+                    if (permissionState === 'granted') {
+                        initSensors();
+                    } else {
+                        showMessage('Доступ к датчикам отклонен пользователем (iOS).');
+                    }
+                } catch (error) {
+                    showMessage('Ошибка запроса прав: ' + error.message);
+                }
+            } else {
+                initSensors();
+            }
+        });
+
+        recalibrateBtn.addEventListener('click', () => {
+            initialAlpha = null; 
+            smoothAlpha = 0;
+            showMessage('Нулевая точка успешно сброшена');
+            setTimeout(() => msgBox.classList.add('hidden'), 2000);
+        });
+
+        function initSensors() {
+            // Проверка поддержки датчиков
+            if (!window.DeviceOrientationEvent) {
+                showMessage('Браузер не видит датчики. Если вы в Chrome, убедитесь, что открыли сайт по HTTPS.');
+                return;
+            }
+
+            window.addEventListener('deviceorientation', handleOrientation);
+            window.addEventListener('devicemotion', handleMotion);
+
+            startScreen.classList.add('hidden');
+            dashboard.classList.remove('hidden');
+            
+            if (!isRunning) {
+                isRunning = true;
+                requestAnimationFrame(updateUI);
+            }
+        }
+
+        function handleOrientation(event) {
+            if (event.alpha === null) return;
+
+            if (initialAlpha === null) {
+                initialAlpha = event.alpha;
+            }
+
+            let diff = event.alpha - initialAlpha;
+            
+            if (diff > 180) diff -= 360;
+            if (diff < -180) diff += 360;
+            
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Инвертируем ось вращения
+            rawAlpha = -diff;
+        }
+
+        function handleMotion(event) {
+            let acc = event.accelerationIncludingGravity || event.acceleration;
+            if (acc && acc.x !== null) {
+                // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Инвертируем ось акселерометра
+                rawAccelX = -acc.x; 
+            }
+        }
+
+        function updateUI() {
+            if (!isRunning) return;
+
+            // Low-Pass Filter
+            smoothAlpha = smoothAlpha + (rawAlpha - smoothAlpha) * LPF_FACTOR;
+            smoothAccelX = smoothAccelX + (rawAccelX - smoothAccelX) * LPF_FACTOR;
+
+            valAlpha.textContent = smoothAlpha.toFixed(1);
+            valAccel.textContent = smoothAccelX.toFixed(2);
+
+            let visualAngle = Math.max(-120, Math.min(120, smoothAlpha));
+            steeringWheel.style.transform = `rotate(${visualAngle}deg)`;
+
+            let accelPercent = (Math.abs(smoothAccelX) / MAX_ACCEL) * 100;
+            accelPercent = Math.min(100, Math.max(0, accelPercent)); 
+
+            if (smoothAccelX < 0) {
+                // Влево
+                barLeft.style.width = `${accelPercent}%`;
+                barRight.style.width = '0%';
+            } else if (smoothAccelX > 0) {
+                // Вправо
+                barRight.style.width = `${accelPercent}%`;
+                barLeft.style.width = '0%';
+            } else {
+                barLeft.style.width = '0%';
+                barRight.style.width = '0%';
+            }
+
+            requestAnimationFrame(updateUI);
+        }
+    </script>
+</body>
+</html>
